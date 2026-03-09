@@ -40,14 +40,15 @@ All VAES ops use the standard RVV opcode:
 Field layout (RVV vector “VV” format):
 
 ```
-31          26 25   24      20 19      15 14   12 11       7 6      0
-+--------------+----+----------+----------+-------+----------+--------+
-|    funct6    | vm |   vs2    |   vs1    |funct3 |    vd    | opcode |
-+--------------+----+----------+----------+-------+----------+--------+
+ 0      6 7       11 12   14 15      19 20      24  25  26          31
++--------+----------+-------+----------+----------+----+--------------+
+| opcode |    vd    |funct3 |   vs1    |   vs2    | vm |    funct6    |
++--------+----------+-------+----------+----------+----+--------------+
+
 ```
 
-- `vm` is accepted but not used for masking in this reference.
 - `funct3` is `000` in this reference.
+- `vm` is accepted but not used for masking in this reference.
 
 ### funct6 allocation
 
@@ -114,6 +115,4 @@ The RTL and testbench treat a 128‑bit value as 16 bytes `b[0..15]`:
 
 - `b[0]`  = bits `[127:120]` (MSB)
 - `b[15]` = bits `[7:0]` (LSB)
-
-This matches the typical hex literal view (e.g. `128'h001122...`).
 
