@@ -42,19 +42,22 @@ package tb_vaes_pkg;
         end
     endfunction
 
+    /* verilator lint_off DECLFILENAME */
     class vaes_rand_seq_item;
-        int unsigned vl;
-        int unsigned n_loads;
-        int unsigned n_ops;
-        int unsigned store_rate;
-        int unsigned payload_mode;
+        int unsigned vl           = 16;
+        int unsigned n_loads      = 8;
+        int unsigned n_ops        = 20;
+        int unsigned store_rate   = 4;
+        int unsigned payload_mode = 1;
 
         function string sprint();
             return $sformatf("vl=%0d n_loads=%0d n_ops=%0d store_rate=%0d payload_mode=%0d",
                               vl, n_loads, n_ops, store_rate, payload_mode);
         endfunction
     endclass
+    /* verilator lint_on DECLFILENAME */
 
+    /* verilator lint_off DECLFILENAME */
     class vaes_rand_sequencer;
         localparam int NUM_VL = 4;
         localparam int NUM_PAYLOAD = 3;
@@ -99,7 +102,7 @@ package tb_vaes_pkg;
         endfunction
 
         function void sample_item(input vaes_rand_seq_item item);
-            int vl_bin;
+            logic [1:0] vl_bin;
             vl_bin = map_vl_to_bin(item.vl);
             coverage_hits[vl_bin][item.payload_mode]++;
             generated_items++;
@@ -153,5 +156,6 @@ package tb_vaes_pkg;
             end
         endfunction
     endclass
+    /* verilator lint_on DECLFILENAME */
 
 endpackage

@@ -33,9 +33,9 @@ module tb_vaes_coproc;
     vaes_rand_sequencer rand_seqr;
     vaes_rand_seq_item  rand_item;
 
+`ifndef VERILATOR
     int unsigned cov_vl;
     int unsigned cov_payload_mode;
-`ifndef VERILATOR
     covergroup cg_vl_payload;
         option.per_instance = 1;
         cp_vl: coverpoint cov_vl {
@@ -224,6 +224,7 @@ module tb_vaes_coproc;
         int     rs1;
         int     rs2;
         int     store_idx;
+        int     byte_idx;
         logic [127:0] data_block;
 
         fd = $fopen(filename, "w");
@@ -233,9 +234,9 @@ module tb_vaes_coproc;
 
         $fdisplay(fd, "CFG VL %0d", item.vl);
 
+`ifndef VERILATOR
         cov_vl           = item.vl;
         cov_payload_mode = item.payload_mode;
-`ifndef VERILATOR
         cg_vl_payload.sample();
 `endif
 
@@ -243,7 +244,12 @@ module tb_vaes_coproc;
             unique case (item.payload_mode)
                 0: data_block = '0;
                 1: data_block = rand_block128();
-                default: data_block = {16{$urandom_range(0, 255)}};
+                default: begin
+                    data_block = '0;
+                    for (byte_idx = 0; byte_idx < 16; byte_idx++) begin
+                        data_block[(byte_idx*8) +: 8] = $urandom_range(0, 255);
+                    end
+                end
             endcase
             $fdisplay(fd, "LOAD V%0d %032h", i, data_block);
         end
