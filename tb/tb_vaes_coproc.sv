@@ -33,26 +33,6 @@ module tb_vaes_coproc;
     vaes_rand_sequencer rand_seqr;
     vaes_rand_seq_item  rand_item;
 
-`ifndef VERILATOR
-    int unsigned cov_vl;
-    int unsigned cov_payload_mode;
-    covergroup cg_vl_payload;
-        option.per_instance = 1;
-        cp_vl: coverpoint cov_vl {
-            bins vl4  = {4};
-            bins vl8  = {8};
-            bins vl12 = {12};
-            bins vl16 = {16};
-        }
-        cp_payload_mode: coverpoint cov_payload_mode {
-            bins zero   = {0};
-            bins random = {1};
-            bins dense  = {2};
-        }
-        cross cp_vl, cp_payload_mode;
-    endgroup
-`endif
-
     vaes_coproc_top dut (
         .clk          (clk),
         .rst_n        (rst_n),
@@ -233,12 +213,6 @@ module tb_vaes_coproc;
         end
 
         $fdisplay(fd, "CFG VL %0d", item.vl);
-
-`ifndef VERILATOR
-        cov_vl           = item.vl;
-        cov_payload_mode = item.payload_mode;
-        cg_vl_payload.sample();
-`endif
 
         for (i = 0; i < item.n_loads; i++) begin
             unique case (item.payload_mode)
@@ -432,9 +406,6 @@ module tb_vaes_coproc;
 
         refm         = new();
         rand_seqr    = new();
-`ifndef VERILATOR
-        cg_vl_payload = new();
-`endif
         total_passes = 0;
         total_tests  = 0;
 
@@ -474,14 +445,7 @@ module tb_vaes_coproc;
             $fatal(1, "Sequence-level cross coverage (VL x payload mode) is incomplete");
         end
 
-`ifndef VERILATOR
-        if (cg_vl_payload.get_coverage() < 100.0) begin
-            $fatal(1, "Covergroup cross coverage is incomplete: %0.2f%%", cg_vl_payload.get_coverage());
-        end
-        $display("[COVERAGE] cg_vl_payload coverage: %0.2f%%", cg_vl_payload.get_coverage());
-`else
-        $display("[COVERAGE] VERILATOR build: using sequencer cross-hit counters as coverage proxy.");
-`endif
+        $display("[COVERAGE] Sequencer cross-hit matrix completed for all VL x payload_mode bins.");
 
         $display("PASS: %0d tests completed, %0d output packets matched the reference model.", total_tests, total_passes);
         $finish;
