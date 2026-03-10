@@ -383,6 +383,18 @@ module vaes_coproc_top #(
     endproperty
     assert property (p_output_hold_when_stalled);
 
+    property p_egress_clears_on_handshake;
+        @(posedge clk) disable iff (!dut_assertions_en_q)
+        m_axis_tvalid && m_axis_tready |=> !m_axis_tvalid;
+    endproperty
+    assert property (p_egress_clears_on_handshake);
+
+    property p_no_new_store_during_backpressure;
+        @(posedge clk) disable iff (!dut_assertions_en_q)
+        out_valid_q && !m_axis_tready |-> !accept_store;
+    endproperty
+    assert property (p_no_new_store_during_backpressure);
+
     property p_ctrl_sbox_matches_ex;
         @(posedge clk) disable iff (!dut_assertions_en_q)
         ctrl_state_q == CTRL_EX_SBOX |-> ex_q.valid && (ex_q.op == VAES_OP_SBOX);

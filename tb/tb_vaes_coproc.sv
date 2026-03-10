@@ -30,6 +30,28 @@ module tb_vaes_coproc;
     int           n_vl_random;
     int           gap_cycles;
     logic         tb_assertions_en_q;
+    vaes_rand_sequencer rand_seqr;
+    vaes_rand_seq_item  rand_item;
+
+    int unsigned cov_vl;
+    int unsigned cov_payload_mode;
+`ifndef VERILATOR
+    covergroup cg_vl_payload;
+        option.per_instance = 1;
+        cp_vl: coverpoint cov_vl {
+            bins vl4  = {4};
+            bins vl8  = {8};
+            bins vl12 = {12};
+            bins vl16 = {16};
+        }
+        cp_payload_mode: coverpoint cov_payload_mode {
+            bins zero   = {0};
+            bins random = {1};
+            bins dense  = {2};
+        }
+        cross cp_vl, cp_payload_mode;
+    endgroup
+`endif
 
     vaes_coproc_top dut (
         .clk          (clk),
@@ -191,7 +213,10 @@ module tb_vaes_coproc;
         $fclose(fd);
     endtask
 
-    task automatic write_random_instruction_file(input string filename);
+    task automatic write_random_instruction_file(
+        input string             filename,
+        input vaes_rand_seq_item item
+    );
         integer fd;
         int     i;
         int     op_sel;
@@ -199,7 +224,6 @@ module tb_vaes_coproc;
         int     rs1;
         int     rs2;
         int     store_idx;
-        int     vl_choice;
         logic [127:0] data_block;
 
         fd = $fopen(filename, "w");
@@ -207,20 +231,29 @@ module tb_vaes_coproc;
             $fatal(1, "Cannot open '%0s' for write", filename);
         end
 
-        vl_choice = $urandom_range(0, 3);
-        case (vl_choice)
-            0: $fdisplay(fd, "CFG VL 4");
-            1: $fdisplay(fd, "CFG VL 8");
-            2: $fdisplay(fd, "CFG VL 12");
-            default: $fdisplay(fd, "CFG VL 16");
-        endcase
+        $fdisplay(fd, "CFG VL %0d", item.vl);
 
-        for (i = 0; i < 8; i++) begin
+        cov_vl           = item.vl;
+        cov_payload_mode = item.payload_mode;
+`ifndef VERILATOR
+        cg_vl_payload.sample();
+`endif
+
+        for (i = 0; i < item.n_loads; i++) begin
+            unique case (item.payload_mode)
+                0: data_block = '0;
+                1: data_block = rand_block128();
+                default: data_block = {16{$urandom_range(0, 255)}};
+            endcase
+            $fdisplay(fd, "LOAD V%0d %032h", i, data_block);
+        end
+
+        for (i = item.n_loads; i < 8; i++) begin
             data_block = rand_block128();
             $fdisplay(fd, "LOAD V%0d %032h", i, data_block);
         end
 
-        for (i = 0; i < 20; i++) begin
+        for (i = 0; i < item.n_ops; i++) begin
             op_sel = $urandom_range(0, 3);
             rd     = $urandom_range(0, 7);
             rs1    = $urandom_range(0, 7);
@@ -233,7 +266,7 @@ module tb_vaes_coproc;
                 default: $fdisplay(fd, "INST vaes.ark.v V%0d V%0d V%0d", rd, rs1, rs2);
             endcase
 
-            if ($urandom_range(0, 4) == 0) begin
+            if ($urandom_range(0, item.store_rate) == 0) begin
                 store_idx = $urandom_range(0, 7);
                 $fdisplay(fd, "STORE V%0d", store_idx);
             end
@@ -392,6 +425,10 @@ module tb_vaes_coproc;
         void'($urandom(seed_base));
 
         refm         = new();
+        rand_seqr    = new();
+`ifndef VERILATOR
+        cg_vl_payload = new();
+`endif
         total_passes = 0;
         total_tests  = 0;
 
@@ -419,10 +456,26 @@ module tb_vaes_coproc;
 
         for (vl_idx = 0; vl_idx < n_vl_random; vl_idx++) begin
             reset_env();
-            write_random_instruction_file($sformatf("tb/generated_vl_%0d.txt", vl_idx));
+            rand_seqr.randomize_next(rand_item);
+            $display("[SEQUENCER] item[%0d]: %0s", vl_idx, rand_item.sprint());
+            write_random_instruction_file($sformatf("tb/generated_vl_%0d.txt", vl_idx), rand_item);
             run_sequence_file($sformatf("tb/generated_vl_%0d.txt", vl_idx),
                                 $sformatf("Random variable-VL case %0d", vl_idx));
         end
+
+        rand_seqr.report_coverage();
+        if (!rand_seqr.has_full_cross_coverage()) begin
+            $fatal(1, "Sequence-level cross coverage (VL x payload mode) is incomplete");
+        end
+
+`ifndef VERILATOR
+        if (cg_vl_payload.get_coverage() < 100.0) begin
+            $fatal(1, "Covergroup cross coverage is incomplete: %0.2f%%", cg_vl_payload.get_coverage());
+        end
+        $display("[COVERAGE] cg_vl_payload coverage: %0.2f%%", cg_vl_payload.get_coverage());
+`else
+        $display("[COVERAGE] VERILATOR build: using sequencer cross-hit counters as coverage proxy.");
+`endif
 
         $display("PASS: %0d tests completed, %0d output packets matched the reference model.", total_tests, total_passes);
         $finish;
