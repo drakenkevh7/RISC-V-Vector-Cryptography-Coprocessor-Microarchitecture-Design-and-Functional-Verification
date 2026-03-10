@@ -72,7 +72,7 @@ All four instructions use the same custom R-type encoding under opcode `custom-0
 
 ### 1) `vaes.sbox.v`
 
-**Assembly**
+**Mnemonic**
 
 ```text
 vaes.sbox.v vd, vs1
@@ -109,7 +109,7 @@ vd[i] = vs1[i]
 
 ### 2) `vaes.srow.v`
 
-**Assembly**
+**Mnemonic**
 
 ```text
 vaes.srow.v vd, vs1
@@ -148,7 +148,7 @@ Inactive bytes are copied from `vs1`.
 
 ### 3) `vaes.mcol.v`
 
-**Assembly**
+**Mnemonic**
 
 ```text
 vaes.mcol.v vd, vs1
@@ -189,7 +189,7 @@ Inactive bytes are copied from `vs1`.
 
 ### 4) `vaes.ark.v`
 
-**Assembly**
+**Mnemonic**
 
 ```text
 vaes.ark.v vd, vs1, vs2
@@ -313,7 +313,7 @@ INST vaes.mcol.v V0 V0
 STORE V0
 ```
 
-## Assembly-form reference
+## Mnemonic-form reference
 
 ### Unary instructions
 
