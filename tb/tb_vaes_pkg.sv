@@ -79,7 +79,7 @@ package tb_vaes_pkg;
             generated_items = 0;
         endfunction
 
-        function automatic int map_vl_to_bin(input int unsigned vl);
+        function automatic logic [1:0] map_vl_to_bin(input int unsigned vl);
             case (vl)
                 4: map_vl_to_bin = 0;
                 8: map_vl_to_bin = 1;

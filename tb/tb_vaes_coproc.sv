@@ -247,7 +247,7 @@ module tb_vaes_coproc;
                 default: begin
                     data_block = '0;
                     for (byte_idx = 0; byte_idx < 16; byte_idx++) begin
-                        data_block[(byte_idx*8) +: 8] = $urandom_range(0, 255);
+                        data_block[(byte_idx*8) +: 8] = logic [7:0]'($urandom_range(0, 255));
                     end
                 end
             endcase
