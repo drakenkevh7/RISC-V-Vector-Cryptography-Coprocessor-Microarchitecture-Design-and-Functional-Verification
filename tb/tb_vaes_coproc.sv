@@ -29,7 +29,11 @@ module tb_vaes_coproc;
     int           n_aes_random;
     int           n_vl_random;
     int           gap_cycles;
+    int           active_ready_mode;
+    int unsigned  opcode_hits[0:3];
     logic         tb_assertions_en_q;
+    vaes_rand_sequencer rand_seqr;
+    vaes_rand_seq_item  rand_item;
 
     vaes_coproc_top dut (
         .clk          (clk),
@@ -83,15 +87,21 @@ module tb_vaes_coproc;
 
     task automatic drive_pkt(input axis_pkt_t pkt);
         logic [AXIS_IN_W-1:0] raw_pkt;
+        int timeout_cycles;
         raw_pkt = pkt;
         @(negedge clk);
         s_axis_tdata  = raw_pkt;
         s_axis_tvalid = 1'b1;
         s_axis_tlast  = 1'b1;
+        timeout_cycles = 0;
         while (1) begin
             @(posedge clk);
             if (s_axis_tready) begin
                 break;
+            end
+            timeout_cycles++;
+            if (timeout_cycles > 20000) begin
+                $fatal(1, "Timeout while waiting for s_axis_tready during packet drive");
             end
         end
         @(negedge clk);
@@ -191,7 +201,10 @@ module tb_vaes_coproc;
         $fclose(fd);
     endtask
 
-    task automatic write_random_instruction_file(input string filename);
+    task automatic write_random_instruction_file(
+        input string             filename,
+        input vaes_rand_seq_item item
+    );
         integer fd;
         int     i;
         int     op_sel;
@@ -199,7 +212,8 @@ module tb_vaes_coproc;
         int     rs1;
         int     rs2;
         int     store_idx;
-        int     vl_choice;
+        int     reg_max;
+        int     byte_idx;
         logic [127:0] data_block;
 
         fd = $fopen(filename, "w");
@@ -207,24 +221,40 @@ module tb_vaes_coproc;
             $fatal(1, "Cannot open '%0s' for write", filename);
         end
 
-        vl_choice = $urandom_range(0, 3);
-        case (vl_choice)
-            0: $fdisplay(fd, "CFG VL 4");
-            1: $fdisplay(fd, "CFG VL 8");
-            2: $fdisplay(fd, "CFG VL 12");
-            default: $fdisplay(fd, "CFG VL 16");
-        endcase
+        $fdisplay(fd, "CFG VL %0d", item.vl);
 
-        for (i = 0; i < 8; i++) begin
-            data_block = rand_block128();
-            $fdisplay(fd, "LOAD V%0d %032h", i, data_block);
+        reg_max = (item.reg_bank_mode == 0) ? 7 : 31;
+
+        for (i = 0; i < item.n_loads; i++) begin
+            unique case (item.payload_mode)
+                0: data_block = '0;
+                1: data_block = rand_block128();
+                default: begin
+                    data_block = '0;
+                    for (byte_idx = 0; byte_idx < 16; byte_idx++) begin
+                        data_block[(byte_idx*8) +: 8] = byte'($urandom_range(0, 255));
+                    end
+                end
+            endcase
+            $fdisplay(fd, "LOAD V%0d %032h", i % (reg_max + 1), data_block);
         end
 
-        for (i = 0; i < 20; i++) begin
-            op_sel = $urandom_range(0, 3);
-            rd     = $urandom_range(0, 7);
-            rs1    = $urandom_range(0, 7);
-            rs2    = $urandom_range(0, 7);
+        for (i = item.n_loads; i < ((reg_max < 8) ? 8 : 12); i++) begin
+            data_block = rand_block128();
+            $fdisplay(fd, "LOAD V%0d %032h", i % (reg_max + 1), data_block);
+        end
+
+        for (i = 0; i < item.n_ops; i++) begin
+            if ($urandom_range(0, 99) < 50) begin
+                op_sel = item.op_bias;
+            end
+            else begin
+                op_sel = $urandom_range(0, 3);
+            end
+            rd     = $urandom_range(0, reg_max);
+            rs1    = $urandom_range(0, reg_max);
+            rs2    = $urandom_range(0, reg_max);
+            opcode_hits[op_sel] = opcode_hits[op_sel] + 1;
 
             case (op_sel)
                 0: $fdisplay(fd, "INST vaes.sbox.v V%0d V%0d", rd, rs1);
@@ -233,13 +263,13 @@ module tb_vaes_coproc;
                 default: $fdisplay(fd, "INST vaes.ark.v V%0d V%0d V%0d", rd, rs1, rs2);
             endcase
 
-            if ($urandom_range(0, 4) == 0) begin
-                store_idx = $urandom_range(0, 7);
+            if ($urandom_range(0, item.store_rate) == 0) begin
+                store_idx = $urandom_range(0, reg_max);
                 $fdisplay(fd, "STORE V%0d", store_idx);
             end
         end
 
-        store_idx = $urandom_range(0, 7);
+        store_idx = $urandom_range(0, reg_max);
         $fdisplay(fd, "STORE V%0d", store_idx);
 
         $fclose(fd);
@@ -332,7 +362,11 @@ module tb_vaes_coproc;
             m_axis_tready <= 1'b0;
         end
         else begin
-            m_axis_tready <= ($urandom_range(0, 3) != 0);
+            unique case (active_ready_mode)
+                0: m_axis_tready <= 1'b1;
+                1: m_axis_tready <= ($urandom_range(0, 3) != 0);
+                default: m_axis_tready <= ($urandom_range(0, 7) == 0);
+            endcase
         end
     end
 
@@ -377,6 +411,7 @@ module tb_vaes_coproc;
         logic [127:0] key;
         integer       aes_idx;
         integer       vl_idx;
+        integer       op_idx;
 
         seed_base    = 32'h1bad_f00d;
         n_aes_random = 8;
@@ -392,6 +427,11 @@ module tb_vaes_coproc;
         void'($urandom(seed_base));
 
         refm         = new();
+        rand_seqr    = new();
+        active_ready_mode = 1;
+        for (op_idx = 0; op_idx < 4; op_idx++) begin
+            opcode_hits[op_idx] = 0;
+        end
         total_passes = 0;
         total_tests  = 0;
 
@@ -419,10 +459,29 @@ module tb_vaes_coproc;
 
         for (vl_idx = 0; vl_idx < n_vl_random; vl_idx++) begin
             reset_env();
-            write_random_instruction_file($sformatf("tb/generated_vl_%0d.txt", vl_idx));
+            rand_seqr.randomize_next(rand_item);
+            active_ready_mode = rand_item.ready_mode;
+            $display("[SEQUENCER] item[%0d]: %0s", vl_idx, rand_item.sprint());
+            write_random_instruction_file($sformatf("tb/generated_vl_%0d.txt", vl_idx), rand_item);
             run_sequence_file($sformatf("tb/generated_vl_%0d.txt", vl_idx),
                                 $sformatf("Random variable-VL case %0d", vl_idx));
         end
+
+        rand_seqr.report_coverage();
+        if (!rand_seqr.has_full_cross_coverage()) begin
+            $fatal(1, "Sequence-level cross coverage (VL x payload mode) is incomplete");
+        end
+        if (!rand_seqr.has_mode_coverage()) begin
+            $fatal(1, "Sequence-level mode coverage (ready/reg-bank/op-bias) is incomplete");
+        end
+
+        for (op_idx = 0; op_idx < 4; op_idx++) begin
+            if (opcode_hits[op_idx] == 0) begin
+                $fatal(1, "Opcode coverage incomplete: op_sel=%0d has 0 hits", op_idx);
+            end
+        end
+
+        $display("[COVERAGE] Sequencer cross-hit matrix completed for VL x payload, modes, and opcode hits.");
 
         $display("PASS: %0d tests completed, %0d output packets matched the reference model.", total_tests, total_passes);
         $finish;
