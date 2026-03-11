@@ -284,6 +284,12 @@ module vaes_coproc_top #(
             id_n.src2  = '0;
         end
 
+        if (if_q.valid && !if_inst_valid) begin
+            if_n.valid = 1'b0;
+            if_n.inst  = '0;
+            if_n.vl    = '0;
+        end
+
         if (if_q.valid && if_inst_valid && !id_n.valid && !if_hazard) begin
             id_n.valid = 1'b1;
             id_n.op    = if_op;
@@ -382,6 +388,18 @@ module vaes_coproc_top #(
         m_axis_tvalid && !m_axis_tready |=> m_axis_tvalid && $stable(m_axis_tdata) && $stable(m_axis_tlast);
     endproperty
     assert property (p_output_hold_when_stalled);
+
+    property p_egress_clears_on_handshake;
+        @(posedge clk) disable iff (!dut_assertions_en_q)
+        m_axis_tvalid && m_axis_tready |=> !m_axis_tvalid;
+    endproperty
+    assert property (p_egress_clears_on_handshake);
+
+    property p_no_new_store_during_backpressure;
+        @(posedge clk) disable iff (!dut_assertions_en_q)
+        out_valid_q && !m_axis_tready |-> !accept_store;
+    endproperty
+    assert property (p_no_new_store_during_backpressure);
 
     property p_ctrl_sbox_matches_ex;
         @(posedge clk) disable iff (!dut_assertions_en_q)
