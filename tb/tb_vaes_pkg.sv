@@ -49,10 +49,13 @@ package tb_vaes_pkg;
         int unsigned n_ops        = 20;
         int unsigned store_rate   = 4;
         int unsigned payload_mode = 1;
+        int unsigned ready_mode   = 1;
+        int unsigned reg_bank_mode = 0;
+        int unsigned op_bias      = 0;
 
         function string sprint();
-            return $sformatf("vl=%0d n_loads=%0d n_ops=%0d store_rate=%0d payload_mode=%0d",
-                              vl, n_loads, n_ops, store_rate, payload_mode);
+            return $sformatf("vl=%0d n_loads=%0d n_ops=%0d store_rate=%0d payload_mode=%0d ready_mode=%0d reg_bank_mode=%0d op_bias=%0d",
+                              vl, n_loads, n_ops, store_rate, payload_mode, ready_mode, reg_bank_mode, op_bias);
         endfunction
     endclass
     /* verilator lint_on DECLFILENAME */
@@ -62,6 +65,9 @@ package tb_vaes_pkg;
         localparam int NUM_VL = 4;
         localparam int NUM_PAYLOAD = 3;
         int unsigned coverage_hits[NUM_VL][NUM_PAYLOAD];
+        int unsigned ready_mode_hits[0:2];
+        int unsigned reg_bank_hits[0:1];
+        int unsigned op_bias_hits[0:3];
         int unsigned generated_items;
 
         function new();
@@ -75,6 +81,15 @@ package tb_vaes_pkg;
                 for (j = 0; j < NUM_PAYLOAD; j++) begin
                     coverage_hits[i][j] = 0;
                 end
+            end
+            for (i = 0; i < 3; i++) begin
+                ready_mode_hits[i] = 0;
+            end
+            for (i = 0; i < 2; i++) begin
+                reg_bank_hits[i] = 0;
+            end
+            for (i = 0; i < 4; i++) begin
+                op_bias_hits[i] = 0;
             end
             generated_items = 0;
         endfunction
@@ -101,10 +116,27 @@ package tb_vaes_pkg;
             return 1'b1;
         endfunction
 
+        function automatic bit has_mode_coverage();
+            int i;
+            for (i = 0; i < 3; i++) begin
+                if (ready_mode_hits[i] == 0) return 1'b0;
+            end
+            for (i = 0; i < 2; i++) begin
+                if (reg_bank_hits[i] == 0) return 1'b0;
+            end
+            for (i = 0; i < 4; i++) begin
+                if (op_bias_hits[i] == 0) return 1'b0;
+            end
+            return 1'b1;
+        endfunction
+
         function void sample_item(input vaes_rand_seq_item item);
             logic [1:0] vl_bin;
             vl_bin = map_vl_to_bin(item.vl);
             coverage_hits[vl_bin][item.payload_mode]++;
+            ready_mode_hits[item.ready_mode]++;
+            reg_bank_hits[item.reg_bank_mode]++;
+            op_bias_hits[item.op_bias]++;
             generated_items++;
         endfunction
 
@@ -114,10 +146,13 @@ package tb_vaes_pkg;
             item = new();
 
             item.vl           = 16;
-            item.n_loads      = $urandom_range(4, 8);
-            item.n_ops        = $urandom_range(12, 48);
-            item.store_rate   = $urandom_range(2, 6);
+            item.n_loads      = $urandom_range(2, 16);
+            item.n_ops        = $urandom_range(4, 64);
+            item.store_rate   = $urandom_range(1, 8);
             item.payload_mode = $urandom_range(0, 2);
+            item.ready_mode   = $urandom_range(0, 2);
+            item.reg_bank_mode = $urandom_range(0, 1);
+            item.op_bias      = $urandom_range(0, 3);
 
             for (i = 0; i < NUM_VL; i++) begin
                 for (j = 0; j < NUM_PAYLOAD; j++) begin
@@ -129,6 +164,9 @@ package tb_vaes_pkg;
                             default: item.vl = 16;
                         endcase
                         item.payload_mode = j;
+                        item.ready_mode = (i + j) % 3;
+                        item.reg_bank_mode = (i ^ j) & 1;
+                        item.op_bias = (i + (2*j)) % 4;
                         sample_item(item);
                         return;
                     end
@@ -153,6 +191,15 @@ package tb_vaes_pkg;
                     $display("[SEQUENCER] cross(vl_bin=%0d, payload_mode=%0d) hits=%0d",
                              i, j, coverage_hits[i][j]);
                 end
+            end
+            for (i = 0; i < 3; i++) begin
+                $display("[SEQUENCER] ready_mode=%0d hits=%0d", i, ready_mode_hits[i]);
+            end
+            for (i = 0; i < 2; i++) begin
+                $display("[SEQUENCER] reg_bank_mode=%0d hits=%0d", i, reg_bank_hits[i]);
+            end
+            for (i = 0; i < 4; i++) begin
+                $display("[SEQUENCER] op_bias=%0d hits=%0d", i, op_bias_hits[i]);
             end
         endfunction
     endclass

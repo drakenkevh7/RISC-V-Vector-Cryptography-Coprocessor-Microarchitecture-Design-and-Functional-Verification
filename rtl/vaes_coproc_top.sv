@@ -284,6 +284,12 @@ module vaes_coproc_top #(
             id_n.src2  = '0;
         end
 
+        if (if_q.valid && !if_inst_valid) begin
+            if_n.valid = 1'b0;
+            if_n.inst  = '0;
+            if_n.vl    = '0;
+        end
+
         if (if_q.valid && if_inst_valid && !id_n.valid && !if_hazard) begin
             id_n.valid = 1'b1;
             id_n.op    = if_op;
